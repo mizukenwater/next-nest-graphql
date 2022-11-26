@@ -1,0 +1,89 @@
+version: '3'
+
+services:
+  web:
+    container_name: web
+    build:
+      context: ./dockerfiles/web
+      dockerfile: Dockerfile
+    volumes:
+      - ./web:/usr/app
+      - web-modules:/usr/app/node_modules
+    command: yarn dev
+    tty: true
+    stdin_open: true
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    ports:
+      - "3001:3001"
+    depends_on:
+      api:
+        condition: service_healthy
+  api:
+    container_name: api
+    build:
+      context: ./dockerfiles/api
+      dockerfile: Dockerfile
+    volumes:
+      - ./api:/usr/app
+      - api-modules:/usr/app/node_modules
+    command: yarn start:dev
+    tty: true
+    stdin_open: true
+    ports:
+      - "3000:3000"
+      - "5555:5555"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl host.docker.internal:3000 || exit 1"]
+      start_period: "30s"
+      retries: 3
+      timeout: "5s"
+      interval: "30s"
+  db:
+    container_name: db
+    build:
+      context: ./dockerfiles/db
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    volumes:
+      - db-data:/var/lib/mysql
+      - ./dockerfiles/db/initdb.d:/docker-entrypoint-initdb.d
+    command: mysqld
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u", "root", "-prootpass"]
+      start_period: "30s"
+      retries: 3
+      timeout: "5s"
+      interval: "30s"
+  chokidar:
+    container_name: chokidar
+    build:
+      context: ./dockerfiles/chokidar
+      dockerfile: Dockerfile
+    working_dir: /usr/app/api/
+    volumes:
+      - .:/usr/app
+    command: yarn sync
+    tty: true
+    stdin_open: true
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  web-modules:
+    driver_opts:
+      type: none
+      device: ${PWD}/web/node_modules
+      o: bind
+  api-modules:
+    driver_opts:
+      type: none
+      device: ${PWD}/api/node_modules
+      o: bind
+  db-data:
